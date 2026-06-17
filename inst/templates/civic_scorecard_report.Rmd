@@ -1,0 +1,243 @@
+---
+title: "Civic Accountability Scorecard"
+subtitle: "`r params$project`"
+author: "`r params$analyst`"
+date: "`r format(Sys.time(), '%d %B %Y, %H:%M UTC', tz='UTC')`"
+output:
+  html_document:
+    theme: flatly
+    highlight: tango
+    toc: true
+    toc_float: true
+    toc_depth: 3
+    self_contained: true
+    css: civic_report_style.css
+params:
+  object:     NULL     # civic_model
+  test_data:  NULL     # data.frame
+  outcome:    "outcome"
+  protected:  NULL
+  positive:   NULL
+  project:    "civic.icarm"
+  analyst:    "Anonymous"
+  notes:      ""
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE, warning = FALSE, message = FALSE,
+  fig.width = 8, fig.height = 4.5, dpi = 120
+)
+library(civic.icarm)
+library(ggplot2)
+library(dplyr)
+library(knitr)
+
+object    <- params$object
+test_data <- params$test_data
+outcome   <- params$outcome
+protected <- params$protected
+positive  <- params$positive
+```
+
+---
+
+## 1. Model Provenance
+
+```{r provenance}
+prov <- data.frame(
+  Field = c("Model type", "Learner", "Formula", "N train",
+            "Seed", "Trained at", "Data hash (SHA-256, first 24 chars)"),
+  Value = c(
+    object$type,
+    object$model,
+    deparse(object$formula),
+    format(object$n_train, big.mark = ","),
+    as.character(object$seed),
+    format(object$trained_at, "%Y-%m-%d %H:%M:%S UTC", tz = "UTC"),
+    substr(object$data_hash, 1, 24)
+  )
+)
+kable(prov, col.names = c("Field", "Value"), align = c("l","l"))
+```
+
+> **DataCitizen-Pro — Data Literacy pillar:** Full provenance enables any
+> analyst to reproduce this exact model. The data hash detects tampering.
+
+---
+
+## 2. Test Set Performance
+
+```{r performance}
+y_true <- test_data[[outcome]]
+
+if (object$type == "classification") {
+  y_hat  <- predict(object, test_data, type = "class")
+  y_prob <- tryCatch({
+    p <- predict(object, test_data, type = "prob")
+    if (is.matrix(p)) p[, ncol(p)] else as.numeric(p)
+  }, error = function(e) NULL)
+  perf <- civic_metrics(y_true, y_hat, y_prob = y_prob, positive = positive)
+} else {
+  y_hat <- predict(object, test_data)
+  perf  <- civic_metrics(y_true, y_hat, type = "regression")
+}
+
+perf_df <- data.frame(
+  Metric = names(perf),
+  Value  = round(as.numeric(perf), 4)
+)
+kable(perf_df, align = c("l","r"))
+```
+
+```{r perf-plot, fig.height=3}
+if (object$type == "classification") {
+  civic_plot_confusion(y_true, y_hat)
+}
+```
+
+> **DataCitizen-Pro — Statistical Reasoning pillar:** Performance metrics
+> must be interpreted in context. Accuracy alone is insufficient; balanced
+> accuracy accounts for class imbalance.
+
+---
+
+## 3. Model Explanation
+
+```{r explain}
+ex <- civic_explain(object)
+```
+
+```{r importance-plot}
+if (!is.null(ex$importance)) {
+  civic_plot_importance(ex)
+}
+```
+
+**Importance method:** `r ex$importance_method`
+
+```{r importance-table}
+if (!is.null(ex$importance)) {
+  kable(head(ex$importance[, c("feature","importance","importance_scaled")], 10),
+        digits = 4, align = c("l","r","r"))
+}
+```
+
+---
+
+## 4. Probability Calibration
+
+```{r calibration, fig.height=4}
+if (object$type == "classification" && !is.null(y_prob)) {
+  cal <- tryCatch(
+    civic_calibration(object, test_data, outcome, positive),
+    error = function(e) NULL
+  )
+  if (!is.null(cal)) {
+    print(cal)
+    civic_plot_calibration(cal)
+  }
+}
+```
+
+> **DataCitizen-Pro — Statistical Reasoning pillar:** A model used to
+> communicate risk to citizens must be well-calibrated. An ECE > 0.10
+> indicates systematic over- or under-confidence.
+
+---
+
+## 5. Fairness Audit
+
+```{r fairness-section, results='asis'}
+if (is.null(protected)) {
+  cat("> **No protected attribute specified.** Fairness audit not conducted.\n\n")
+  cat("> Re-render this report with `protected = 'column_name'` to include equity metrics.\n")
+}
+```
+
+```{r fairness, eval=!is.null(protected)}
+fair <- civic_fairness_report(object, test_data, outcome, protected, positive)
+kable(round(dplyr::select(fair, where(is.numeric)), 3))
+```
+
+```{r fairness-tpr, eval=!is.null(protected), fig.height=3.5}
+civic_plot_fairness(fair, metric = "tpr",
+                    title = "Equal Opportunity: TPR by Group")
+```
+
+```{r fairness-dp, eval=!is.null(protected), fig.height=3.5}
+civic_plot_fairness(fair, metric = "dp_ratio",
+                    title = "Disparate Impact Ratio",
+                    ref_line = 0.8)
+```
+
+```{r fairness-eo, eval=!is.null(protected), fig.height=4.5}
+tryCatch({
+  eoc <- civic_equalized_odds_curve(object, test_data, outcome, protected, positive)
+  civic_plot_roc_groups(eoc)
+}, error = function(e) NULL)
+```
+
+```{r equity-summary, eval=!is.null(protected)}
+eq <- civic_equity_summary(fair)
+eq_df <- data.frame(
+  Indicator = names(eq),
+  Value = sapply(eq, function(v) {
+    if (is.logical(v)) ifelse(v, "PASS ✓", "FAIL ✗") else round(as.numeric(v), 4)
+  })
+)
+kable(eq_df, align = c("l","r"))
+```
+
+> **DataCitizen-Pro — Democratic Judgment pillar:** The EU AI Act (2024)
+> requires fairness reporting for high-risk algorithmic systems. Discuss
+> with learners: *which fairness criterion is most appropriate here, and why?*
+
+---
+
+## 6. Threshold Analysis
+
+```{r threshold-plot, eval=object$type=="classification" && !is.null(y_prob)}
+thr_tbl <- civic_thresholds(y_true, y_prob, positive = positive)
+civic_plot_thresholds(thr_tbl,
+  metrics = c("accuracy", "recall", "precision", "f1"))
+```
+
+> **DataCitizen-Pro:** The choice of classification threshold is a *democratic*
+> decision. Who bears the cost of false positives vs false negatives?
+
+---
+
+## 7. Audit Trail
+
+```{r audit-trail}
+trail <- civic_audit_trail(
+  object   = object,
+  metrics  = perf,
+  fairness = if (exists("fair")) fair else NULL,
+  analyst  = params$analyst,
+  notes    = params$notes
+)
+cat("```json\n")
+cat(trail)
+cat("\n```\n")
+```
+
+---
+
+## 8. Analyst Notes
+
+`r if (nchar(params$notes) > 0) params$notes else "*No notes provided.*"`
+
+---
+
+## 9. Session Info
+
+```{r session, echo=TRUE}
+sessionInfo()
+```
+
+---
+
+*Generated by [civic.icarm](https://github.com/oluwale-awe/civic.icarm) —
+DataCitizen-Pro / Ludwigsburg University of Education.*
