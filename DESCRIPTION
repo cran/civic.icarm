@@ -1,6 +1,6 @@
 Package: civic.icarm
 Title: Interpretable Civic-Accountable and Responsible Machine Learning
-Version: 0.2.0
+Version: 0.3.0
 Authors@R: c(person("Olushina Olawale", "Awe", email = "olawaleawe@gmail.com", role = c("aut", "cre")), person("Ludwigsburg University of Education", role = "fnd"))
 Description: A general-purpose framework for Interpretable Civic-Accountable
     and Responsible Machine Learning (ICARM). Works with any clean tabular
@@ -22,14 +22,14 @@ Language: en-GB
 Depends: R (>= 4.1.0)
 Imports: stats, utils, rpart, ggplot2, dplyr, tidyr, tibble, purrr,
         rlang, jsonlite, digest
-Suggests: DALEX, glmnet, mgcv, pROC, nnet, testthat, covr
+Suggests: DALEX, glmnet, mgcv, pROC, nnet, testthat, covr, gridExtra
 Config/testthat/edition: 3
 LazyData: true
 RoxygenNote: 7.3.3
 NeedsCompilation: no
-Packaged: 2026-06-10 09:03:39 UTC; olawa
+Packaged: 2026-06-22 09:28:30 UTC; olawa
 Author: Olushina Olawale Awe [aut, cre],
   Ludwigsburg University of Education [fnd]
 Maintainer: Olushina Olawale Awe <olawaleawe@gmail.com>
 Repository: CRAN
-Date/Publication: 2026-06-17 17:50:06 UTC
+Date/Publication: 2026-06-22 13:10:11 UTC

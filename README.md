@@ -28,7 +28,7 @@ developing **data literacy**, **statistical reasoning**, and
 install.packages("civic.icarm")
 
 # Development version from GitHub
-remotes::install_github("Olawaleawe/civic.icarm")
+install.packages("civic.icarm")
 ```
 
 ---

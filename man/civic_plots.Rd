@@ -2,19 +2,13 @@
 % Please edit documentation in R/plots.R
 \name{civic_plots}
 \alias{civic_plots}
-\alias{civic_plot_importance}
-\alias{civic_plot_fairness}
-\alias{civic_plot_confusion}
-\alias{civic_plot_calibration}
-\alias{civic_plot_thresholds}
-\alias{civic_plot_comparison}
-\alias{civic_plot_roc_groups}
 \title{Visualisation functions for civic.icarm}
 \value{
-A \code{ggplot2} object that can be further customised
-  with standard \code{ggplot2} syntax.
+A ggplot2 object that can be further customised
+  with standard ggplot2 syntax.
 }
 \description{
-A family of ggplot2-based visualisation functions.
-All return ggplot2 objects that can be further customised.
+A family of ggplot2-based visualisation functions for civic.icarm
+model objects. All functions return ggplot2 objects that can be
+further customised with standard ggplot2 syntax.
 }

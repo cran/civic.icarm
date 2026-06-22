@@ -16,6 +16,6 @@ utils::globalVariables(c(
   "min_dp_ratio", "max_eo_gap", "di_pass", "eo_pass",
   "n_train", "threshold", "rate_positive",
   "mean_pred", "obs_freq", "bin", "bin_lower", "bin_upper",
-  "Actual", "Predicted", "Freq", "n", "where", ".data"
+  "Actual", "Predicted", "Freq", "n", "where", ".data",
+  "actual", "predicted", "reorder"
 ))
-

@@ -18,6 +18,7 @@ export(civic_plot_calibration)
 export(civic_plot_thresholds)
 export(civic_plot_comparison)
 export(civic_plot_roc_groups)
+export(civic_dashboard)
 
 S3method(print,   civic_model)
 S3method(summary, civic_model)
@@ -27,3 +28,4 @@ S3method(print,   civic_fairness)
 S3method(print,   civic_calibration)
 S3method(print,   civic_comparison)
 
+importFrom(stats, reorder)
