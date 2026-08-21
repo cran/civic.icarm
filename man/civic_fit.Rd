@@ -9,7 +9,7 @@ civic_fit(
   data,
   task = "auto",
   model = "auto",
-  seed = 2025L,
+  seed = NULL,
   cart_control = NULL,
   positive = NULL,
   ...

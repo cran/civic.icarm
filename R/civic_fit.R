@@ -87,7 +87,7 @@ civic_fit <- function(formula,
                       data,
                       task         = "auto",
                       model        = "auto",
-                      seed         = 2025L,
+                      seed         = NULL,
                       cart_control = NULL,
                       positive     = NULL,
                       ...) {
@@ -98,7 +98,7 @@ civic_fit <- function(formula,
   if (nrow(data) < 10L)
     rlang::abort("`data` must have at least 10 rows.")
 
-  set.seed(seed)
+  if (!is.null(seed)) set.seed(seed)
   outcome <- all.vars(formula)[1L]
 
   if (!outcome %in% names(data))
@@ -128,9 +128,14 @@ civic_fit <- function(formula,
 
   # Validate model vs task
   valid_models <- switch(task,
-    binary     = c("cart", "logistic", "logistic_l1"),
-    multiclass = c("cart", "multinomial"),
-    regression = c("cart", "linear", "gam")
+    binary     = c("cart", "logistic", "logistic_l1",
+                   "ridge", "elastic_net", "gam_binary",
+                   "mboost", "ctree", "custom"),
+    multiclass = c("cart", "multinomial",
+                   "ctree", "custom"),
+    regression = c("cart", "linear", "gam",
+                   "ridge", "elastic_net",
+                   "mboost", "ctree", "custom")
   )
   if (!model %in% valid_models)
     rlang::abort(paste0("model = '", model, "' is not available for task = '",
@@ -240,12 +245,12 @@ print.civic_model <- function(x, ...) {
     cat(sprintf("  Classes     : %s\n", paste(x$levels, collapse = ", ")))
   if (!is.null(x$positive))
     cat(sprintf("  Positive    : %s\n", x$positive))
-  cat(sprintf("  Features    : %d  (%s)\n",
-              x$n_features,
+  cat(sprintf("  Features    : %d\n", x$n_features))
+  cat(sprintf("  Feat. names : %s%s\n",
               paste(utils::head(x$feature_names, 4L), collapse = ", "),
-              if (x$n_features > 4L) "..." else ""))
+              if (x$n_features > 4L) ", ..." else ""))
   cat(sprintf("  N train     : %d\n", x$n_train))
-  cat(sprintf("  Seed        : %d\n", x$seed))
+  if (!is.null(x$seed)) cat(sprintf("  Seed        : %d\n", x$seed))
   cat(sprintf("  Trained     : %s\n",
               format(x$trained_at, "%Y-%m-%d %H:%M:%S")))
   cat(sprintf("  Data hash   : %s\n",
@@ -363,4 +368,92 @@ predict.civic_model <- function(object, newdata,
       rlang::abort("Package `mgcv` required.")
   }
   as.numeric(stats::predict(object$fit, newdata = newdata))
+}
+
+## ============================================================
+## New fitting helpers added in v0.4.0 (JSS reviewer request)
+## ============================================================
+
+.fit_ridge <- function(formula, data, task, ...) {
+  if (!requireNamespace("glmnet", quietly = TRUE))
+    rlang::abort("Install glmnet: install.packages('glmnet')")
+  X   <- stats::model.matrix(formula, data)[, -1L, drop = FALSE]
+  y   <- stats::model.frame(formula, data)[[1L]]
+  fam <- if (task == "binary") "binomial" else "gaussian"
+  y_n <- if (is.factor(y)) as.integer(y) - 1L else as.numeric(y)
+  fit <- glmnet::cv.glmnet(X, y_n, family = fam, alpha = 0L, ...)
+  list(fit = fit, X_train = X, y_train = y)
+}
+
+.fit_elastic_net <- function(formula, data, task, ...) {
+  if (!requireNamespace("glmnet", quietly = TRUE))
+    rlang::abort("Install glmnet: install.packages('glmnet')")
+  X   <- stats::model.matrix(formula, data)[, -1L, drop = FALSE]
+  y   <- stats::model.frame(formula, data)[[1L]]
+  fam <- if (task == "binary") "binomial" else "gaussian"
+  y_n <- if (is.factor(y)) as.integer(y) - 1L else as.numeric(y)
+  fit <- glmnet::cv.glmnet(X, y_n, family = fam, alpha = 0.5, ...)
+  list(fit = fit, X_train = X, y_train = y)
+}
+
+.fit_gam_binary <- function(formula, data, ...) {
+  if (!requireNamespace("mgcv", quietly = TRUE))
+    rlang::abort("Install mgcv: install.packages('mgcv')")
+  mf  <- stats::model.frame(formula, data)
+  y   <- mf[[1L]]
+  data[[all.vars(formula)[1L]]] <- as.integer(y) - 1L
+  fit <- mgcv::gam(formula, data = data,
+                   family = stats::binomial(), ...)
+  list(fit = fit)
+}
+
+.fit_mboost <- function(formula, data, task, ...) {
+  if (!requireNamespace("mboost", quietly = TRUE))
+    rlang::abort("Install mboost: install.packages('mboost')")
+  fit <- if (task == "regression") {
+    mboost::glmboost(formula, data = data, ...)
+  } else {
+    mboost::glmboost(formula, data = data,
+                     family = mboost::Binomial(), ...)
+  }
+  list(fit = fit)
+}
+
+.fit_ctree <- function(formula, data, ...) {
+  if (!requireNamespace("partykit", quietly = TRUE))
+    rlang::abort("Install partykit: install.packages('partykit')")
+  fit <- partykit::ctree(formula, data = data, ...)
+  list(fit = fit)
+}
+
+.fit_custom <- function(formula, data, fit_fn, ...) {
+  if (!is.function(fit_fn))
+    rlang::abort("`fit_fn` must be a function when model = 'custom'.")
+  list(fit = fit_fn(formula, data, ...), custom = TRUE)
+}
+
+#' Plot a civic_model object
+#'
+#' Produces a feature importance lollipop plot from a fitted
+#' \code{civic_model} without requiring an explicit call to
+#' \code{\link{civic_explain}}.
+#'
+#' @param x A \code{civic_model} from \code{\link{civic_fit}}.
+#' @param title Optional plot title.
+#' @param ... Additional arguments passed to
+#'   \code{\link{civic_plot_importance}}.
+#' @return A \pkg{ggplot2} object, invisibly.
+#' @export
+#' @examples
+#' m <- civic_fit(Species ~ ., iris)
+#' plot(m)
+plot.civic_model <- function(x, title = NULL, ...) {
+  ex <- civic_explain(x)
+  p  <- civic_plot_importance(ex,
+          title = title %||%
+            paste0("Feature Importance -- ", x$model,
+                   " [", x$task, "]"),
+          ...)
+  print(p)
+  invisible(p)
 }
